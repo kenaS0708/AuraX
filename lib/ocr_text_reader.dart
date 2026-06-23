@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tesseract_ocr/flutter_tesseract_ocr.dart';
+import 'package:image/image.dart' as img;
 
 class OcrTextReader {
   Future<String> read(Uint8List jpegBytes) async {
@@ -10,14 +11,15 @@ class OcrTextReader {
       tmpFile = File(
         '${Directory.systemTemp.path}/lumen_ocr_${DateTime.now().microsecondsSinceEpoch}.jpg',
       );
-      await tmpFile.writeAsBytes(jpegBytes, flush: true);
+      await tmpFile.writeAsBytes(_prepareForOcr(jpegBytes), flush: true);
 
       final recognized = await FlutterTesseractOcr.extractText(
         tmpFile.path,
         language: 'rus+eng',
         args: {
-          'psm': '6',
+          'psm': '11',
           'preserve_interword_spaces': '1',
+          'user_defined_dpi': '300',
         },
       );
       return _normalize(_reliableLines(recognized).join('\n'));
@@ -32,6 +34,27 @@ class OcrTextReader {
   }
 
   Future<void> close() async {}
+
+  Uint8List _prepareForOcr(Uint8List jpegBytes) {
+    final decoded = img.decodeImage(jpegBytes);
+    if (decoded == null) return jpegBytes;
+
+    var prepared = decoded;
+    final maxSide = decoded.width > decoded.height ? decoded.width : decoded.height;
+    if (maxSide < 1800) {
+      final scale = 1800 / maxSide;
+      prepared = img.copyResize(
+        prepared,
+        width: (decoded.width * scale).round(),
+        height: (decoded.height * scale).round(),
+        interpolation: img.Interpolation.cubic,
+      );
+    }
+
+    prepared = img.grayscale(prepared);
+    prepared = img.adjustColor(prepared, contrast: 1.65);
+    return Uint8List.fromList(img.encodeJpg(prepared, quality: 95));
+  }
 
   List<String> _reliableLines(String recognized) {
     final lines = <String>[];
