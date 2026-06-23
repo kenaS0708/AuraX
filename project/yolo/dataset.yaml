@@ -1,0 +1,23 @@
+path: ./datasets/blind_assist
+train: train/images
+val:   valid/images
+
+nc: 17
+names:
+  - person          # 0  — человек
+  - bicycle         # 1  — велосипед
+  - car             # 2  — машина
+  - motorcycle      # 3  — мотоцикл
+  - bus             # 4  — автобус
+  - truck           # 5  — грузовик
+  - traffic_light   # 6  — светофор
+  - stop_sign       # 7  — знак стоп
+  - chair           # 8  — стул
+  - couch           # 9  — диван
+  - dining_table    # 10 — стол
+  - bench           # 11 — скамейка
+  - fire_hydrant    # 12 — гидрант
+  - stairs          # 13 — лестница (кастомный)
+  - door_open       # 14 — дверь открыта (кастомный)
+  - door_closed     # 15 — дверь закрыта (кастомный)
+  - crosswalk       # 16 — пешеходный переход (кастомный)

@@ -1,0 +1,3 @@
+root       ::= seq
+seq        ::= "" | token seq
+token      ::= "i'm sorry | cannot | can't | i can’t | i am not | refuse | won't"
