@@ -67,3 +67,6 @@ project/yolo/**/weights/
 
 # Nested upstream checkout; keep local, do not commit as a broken gitlink
 packages/llama_cpp_dart/src/llama.cpp/
+
+# Local screenshots/photos for agent inspection
+image for ai agents/
