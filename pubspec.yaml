@@ -53,7 +53,7 @@ dependencies:
   onnxruntime: ^1.4.1
   tflite_flutter:
     path: packages/tflite_flutter
-  google_mlkit_text_recognition: ^0.14.0
+  flutter_tesseract_ocr: ^0.4.31
 
 dev_dependencies:
   flutter_test:
@@ -81,6 +81,8 @@ flutter:
   assets:
     - assets/models/
     - assets/models/blind.onnx
+    - assets/tessdata/
+    - assets/tessdata_config.json
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

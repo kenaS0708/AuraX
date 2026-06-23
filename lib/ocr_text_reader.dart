@@ -1,11 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:flutter_tesseract_ocr/flutter_tesseract_ocr.dart';
 
 class OcrTextReader {
-  final TextRecognizer _recognizer = TextRecognizer();
-
   Future<String> read(Uint8List jpegBytes) async {
     File? tmpFile;
     try {
@@ -14,8 +12,14 @@ class OcrTextReader {
       );
       await tmpFile.writeAsBytes(jpegBytes, flush: true);
 
-      final inputImage = InputImage.fromFilePath(tmpFile.path);
-      final recognized = await _recognizer.processImage(inputImage);
+      final recognized = await FlutterTesseractOcr.extractText(
+        tmpFile.path,
+        language: 'rus+eng',
+        args: {
+          'psm': '6',
+          'preserve_interword_spaces': '1',
+        },
+      );
       return _normalize(_reliableLines(recognized).join('\n'));
     } catch (e) {
       debugPrint('OCR error: $e');
@@ -27,28 +31,23 @@ class OcrTextReader {
     }
   }
 
-  Future<void> close() => _recognizer.close();
+  Future<void> close() async {}
 
-  List<String> _reliableLines(RecognizedText recognized) {
+  List<String> _reliableLines(String recognized) {
     final lines = <String>[];
 
-    for (final block in recognized.blocks) {
-      for (final line in block.lines) {
-        final text = line.text.trim();
-        if (!_isReliableLine(text, line.confidence)) continue;
-        lines.add(text);
-      }
+    for (final rawLine in recognized.split(RegExp(r'\r?\n'))) {
+      final text = rawLine.trim();
+      if (!_isReliableLine(text)) continue;
+      lines.add(text);
     }
 
     return lines.toSet().toList();
   }
 
-  bool _isReliableLine(String text, double? confidence) {
+  bool _isReliableLine(String text) {
     final normalized = text.replaceAll(RegExp(r'\s+'), ' ').trim();
     if (normalized.isEmpty) return false;
-
-    // Android exposes confidence; iOS returns null. Be conservative when it is present.
-    if (confidence != null && confidence < 0.72) return false;
 
     final letters = RegExp(r'[A-Za-zА-Яа-яЁё]').allMatches(normalized).length;
     final digits = RegExp(r'\d').allMatches(normalized).length;
@@ -60,8 +59,8 @@ class OcrTextReader {
     if (words == 0) return false;
     if (digits > letters && !hasCyrillic) return false;
 
-    // For non-Cyrillic single-word results require a longer token, otherwise ML Kit often
-    // hallucinates short Latin words on photos without readable text.
+    // For non-Cyrillic single-word results require a longer token, otherwise OCR can
+    // hallucinate short Latin words on photos without readable text.
     if (!hasCyrillic && words == 1 && letters < 6) return false;
 
     return true;
