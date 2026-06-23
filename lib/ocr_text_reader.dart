@@ -20,6 +20,11 @@ class OcrTextReader {
           'psm': '11',
           'preserve_interword_spaces': '1',
           'user_defined_dpi': '300',
+          'tessedit_char_whitelist':
+              '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+              'АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ'
+              'абвгдеёжзийклмнопрстуфхцчшщъыьэюя'
+              ' .,!?-:;()',
         },
       );
       return _normalize(_reliableLines(recognized).join('\n'));
@@ -60,12 +65,70 @@ class OcrTextReader {
     final lines = <String>[];
 
     for (final rawLine in recognized.split(RegExp(r'\r?\n'))) {
-      final text = rawLine.trim();
-      if (!_isReliableLine(text)) continue;
+      final text = _cleanReliableLine(rawLine);
+      if (text == null) continue;
       lines.add(text);
     }
 
     return lines.toSet().toList();
+  }
+
+  String? _cleanReliableLine(String rawLine) {
+    final chunks = rawLine
+        .split(RegExp(r'[§=|_~<>\\[\\]{}()]+|[.!?;:]+'))
+        .map(_cleanChunk)
+        .where((chunk) => chunk != null)
+        .cast<String>()
+        .toList();
+
+    if (chunks.isEmpty) return null;
+    chunks.sort((a, b) => _lineQuality(b).compareTo(_lineQuality(a)));
+
+    final best = chunks.first;
+    if (!_isReliableLine(best)) return null;
+    return best;
+  }
+
+  String? _cleanChunk(String chunk) {
+    final tokens = RegExp(r'[A-Za-zА-Яа-яЁё0-9-]+')
+        .allMatches(chunk)
+        .map((m) => m.group(0)!)
+        .where(_isUsefulToken)
+        .toList();
+
+    if (tokens.isEmpty) return null;
+    if (!tokens.any((token) => RegExp(r'[A-Za-zА-Яа-яЁё]{4,}').hasMatch(token))) {
+      return null;
+    }
+
+    return tokens.join(' ');
+  }
+
+  bool _isUsefulToken(String token) {
+    final hasCyrillic = RegExp(r'[А-Яа-яЁё]').hasMatch(token);
+    final hasLatin = RegExp(r'[A-Za-z]').hasMatch(token);
+    final hasLetters = RegExp(r'[A-Za-zА-Яа-яЁё]').hasMatch(token);
+    final letters = RegExp(r'[A-Za-zА-Яа-яЁё]').allMatches(token).length;
+
+    if (!hasLetters) return token.length >= 2;
+    if (hasCyrillic && hasLatin) return false;
+    if (letters < 3) return false;
+    if (hasLatin && letters < 6) return false;
+    return true;
+  }
+
+  int _lineQuality(String text) {
+    final tokens = text.split(RegExp(r'\s+')).where((t) => t.isNotEmpty);
+    var score = 0;
+    for (final token in tokens) {
+      final cyrillic = RegExp(r'[А-Яа-яЁё]').allMatches(token).length;
+      final latin = RegExp(r'[A-Za-z]').allMatches(token).length;
+      score += cyrillic * 3;
+      score += latin;
+      if (RegExp(r'^[А-ЯЁ][а-яё]+$').hasMatch(token)) score += 4;
+      if (token.length <= 3) score -= 3;
+    }
+    return score;
   }
 
   bool _isReliableLine(String text) {
