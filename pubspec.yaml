@@ -53,6 +53,7 @@ dependencies:
   onnxruntime: ^1.4.1
   tflite_flutter:
     path: packages/tflite_flutter
+  google_mlkit_text_recognition: ^0.14.0
 
 dev_dependencies:
   flutter_test:

@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -16,13 +15,14 @@ import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'ble_manager.dart';
 import 'local_model.dart';
+import 'ocr_text_reader.dart';
 import 'yolo/yolo_model_manager.dart';
 import 'yolo/scene_describer.dart';
 
 enum UiPhase {
   idle, scanning, connecting, connected,
   capturing, receiving, uploading, speaking,
-  recording, errorа
+  recording, error
 }
 
 class AppState extends ChangeNotifier {
@@ -67,6 +67,7 @@ class AppState extends ChangeNotifier {
   final FlutterTts _tts = FlutterTts();
   final AudioRecorder _recorder = AudioRecorder();
   final AudioPlayer _player = AudioPlayer();
+  final OcrTextReader _ocrTextReader = OcrTextReader();
 
   Completer<Uint8List>? _realtimeJpegCompleter;
   String? _pendingAudioPath;
@@ -270,7 +271,9 @@ class AppState extends ChangeNotifier {
       );
       if (picked == null) return false;
       final bytes = await picked.readAsBytes();
-      _handleJpeg(bytes);
+      _lastPhoto = bytes;
+      _photos.add(bytes);
+      await _analyzeLocally(bytes);
       return true;
     } catch (e) {
       debugPrint('❌ Gallery picker: $e');
@@ -810,10 +813,10 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _analyzeLocally(Uint8List jpegBytes) async {
-    // ── YOLO: быстрое локальное описание (~50мс) ──────────
+    // ── OCR + YOLO: локальное чтение текста и предупреждения ───
     if (_yoloModel.isReady) {
       _phase = UiPhase.uploading;
-      _statusText = 'Анализирую...';
+      _statusText = 'Анализирую текст и объекты...';
       notifyListeners();
 
       // Уступаем event loop чтобы UI обновился до тяжёлой работы
@@ -823,11 +826,19 @@ class AppState extends ChangeNotifier {
         final sw = Stopwatch()..start();
         final decoded = img.decodeImage(jpegBytes);
         if (decoded == null) throw Exception('Не удалось декодировать изображение');
-        final detections = await _yoloModel.blindDetector.detect(decoded);
+        final ocrFuture = _ocrTextReader.read(jpegBytes);
+        final detectionsFuture = _yoloModel.blindDetector.detect(decoded);
+        final recognizedText = await ocrFuture;
+        final detections = await detectionsFuture;
         sw.stop();
         debugPrint('🟢 YOLO: ${detections.length} объектов за ${sw.elapsedMilliseconds}мс');
 
-        final text = SceneDescriber.describe(detections);
+        final sceneText = SceneDescriber.describe(detections);
+        final text = _composeLocalAnalysisText(
+          recognizedText: recognizedText,
+          sceneText: sceneText,
+          hasDetections: detections.isNotEmpty,
+        );
         _aiResponse = text;
         _phase = UiPhase.speaking;
         _statusText = 'Подключено • Офлайн';
@@ -852,6 +863,25 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  String _composeLocalAnalysisText({
+    required String recognizedText,
+    required String sceneText,
+    required bool hasDetections,
+  }) {
+    final parts = <String>[];
+    if (recognizedText.isNotEmpty) {
+      parts.add('Текст на фото: $recognizedText');
+    }
+
+    final hasWarning = hasDetections && sceneText.trim() != 'Путь свободен.';
+    if (hasWarning) {
+      parts.add('Предупреждение: $sceneText');
+    }
+
+    if (parts.isEmpty) return sceneText;
+    return parts.join('\n\n');
+  }
+
   Future<void> _initTts() async {
     await _tts.setLanguage('ru-RU');
     await _tts.setSpeechRate(0.5);
@@ -873,6 +903,7 @@ class AppState extends ChangeNotifier {
     _localModel.dispose();
     _yoloModel.removeListener(notifyListeners);
     _yoloModel.dispose();
+    _ocrTextReader.close();
     _tts.stop();
     _recorder.dispose();
     _player.dispose();
